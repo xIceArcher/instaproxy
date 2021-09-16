@@ -51,6 +51,7 @@ func requestHandler(w http.ResponseWriter, r *http.Request) {
 	req, err := http.NewRequest("GET", baseURL+postID, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36")
@@ -58,12 +59,14 @@ func requestHandler(w http.ResponseWriter, r *http.Request) {
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
 	}
-
 	defer resp.Body.Close()
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	doc := soup.HTMLParse(string(body))
@@ -71,7 +74,7 @@ func requestHandler(w http.ResponseWriter, r *http.Request) {
 
 	for _, script := range scripts {
 		text := script.Text()
-		if len(text) > 18 && script.Text()[0:18] == "window._sharedData" {
+		if len(text) > 21 && script.Text()[0:18] == "window._sharedData" {
 			sharedData = text[21 : len(text)-1]
 			break
 		}
