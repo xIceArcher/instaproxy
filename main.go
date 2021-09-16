@@ -84,7 +84,7 @@ func requestHandler(w http.ResponseWriter, r *http.Request) {
 		Ctx:   redisContext,
 		Key:   postID,
 		Value: sharedData,
-		TTL:   7 * 24 * time.Hour,
+		TTL:   24 * time.Hour,
 	}); err != nil {
 		// Cannot write cache for some reason, just continue
 	}
