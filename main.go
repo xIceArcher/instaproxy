@@ -63,6 +63,11 @@ func requestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, resp.Status, resp.StatusCode)
+		return
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
