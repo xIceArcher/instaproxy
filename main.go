@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"time"
 
@@ -16,14 +17,8 @@ import (
 )
 
 var baseURL string = "https://instagram.com/p/"
-var httpClient *RateLimitedHTTPClient = &RateLimitedHTTPClient{
-	client: &http.Client{
-		Timeout: 10 * time.Second,
-	},
-	RateLimiter: rate.NewLimiter(rate.Every(time.Second), 1),
-}
+var httpClient *RateLimitedHTTPClient
 
-var redisContext context.Context = context.Background()
 var redisCache *cache.Cache = cache.New(&cache.Options{
 	Redis: redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -33,13 +28,24 @@ var redisCache *cache.Cache = cache.New(&cache.Options{
 	LocalCache: cache.NewTinyLFU(1000, time.Minute),
 })
 
+func init() {
+	jar, _ := cookiejar.New(nil)
+	httpClient = &RateLimitedHTTPClient{
+		client: &http.Client{
+			Timeout: 10 * time.Second,
+			Jar:     jar,
+		},
+		RateLimiter: rate.NewLimiter(rate.Every(time.Second), 1),
+	}
+}
+
 func requestHandler(w http.ResponseWriter, r *http.Request) {
 	postID := mux.Vars(r)["postID"]
 	w.Header().Set("Content-Type", "application/json")
 
 	var sharedData string
-	if redisCache.Exists(redisContext, postID) {
-		if err := redisCache.Get(redisContext, postID, &sharedData); err != nil {
+	if redisCache.Exists(context.Background(), postID) {
+		if err := redisCache.Get(context.Background(), postID, &sharedData); err != nil {
 			// Cannot read cache for some reason, just continue
 		} else {
 			log.Println("Cache hit: " + postID)
@@ -86,7 +92,7 @@ func requestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err = redisCache.Set(&cache.Item{
-		Ctx:   redisContext,
+		Ctx:   context.Background(),
 		Key:   postID,
 		Value: sharedData,
 		TTL:   24 * time.Hour,
