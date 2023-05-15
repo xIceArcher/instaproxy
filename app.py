@@ -71,6 +71,7 @@ class API:
             on_login=lambda x: self.login_callback(x))
 
     def login_callback(self, api):
+        self.device_id = api.settings.get('device_id')
         with open(self.settings_file_name, 'w') as outfile:
             json.dump(api.settings, outfile, default=self.to_json)
 
