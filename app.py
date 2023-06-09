@@ -348,10 +348,12 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
     def _transform_to_user(self, data):
         ret = {
             "username": data["owner"]["username"],
-            "pk": data["owner"]["id"],
         }
 
-        if "profile_pic_url" in data:
+        if "id" in data["owner"]:
+            ret["pk"] = data["owner"]["id"]
+
+        if "profile_pic_url" in data["owner"]:
             ret["profile_pic_url"] = data["owner"]["profile_pic_url"]
 
         return ret
