@@ -226,7 +226,8 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                 if len(video_data) == 1:
                     embed_data["shortcode_media"]["node"] = {
                         "__typename": "GraphVideo",
-                        "display_resources": [{"config_width": 0, "config_height": 0, "src": video_data[0]["contentUrl"]}]
+                        "dimensions": { "height": 0, "width": 0 },
+                        "video_url": video_data[0]["contentUrl"]
                     }
                 else:
                     embed_data["shortcode_media"]["edge_sidecar_to_children"] = {
@@ -234,7 +235,8 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                             {
                                 "node": {
                                     "__typename": "GraphVideo",
-                                    "display_resources": [{"config_width": 0, "config_height": 0, "src": video["contentUrl"]}]
+                                    "dimensions": { "height": 0, "width": 0 },
+                                     "video_url": video["contentUrl"],
                                 }
                             }
                             for video in video_data
