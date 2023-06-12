@@ -181,9 +181,11 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
     def _get_user(self, user_name):
         data = self._get_user_data(user_name)["context"]
         return {
-            "user": self._transform_to_user(data["graphql_media"][0]["shortcode_media"]) | {
+            "user": {
                 "full_name": data["full_name"],
-                "profile_pic_url": data["graphql_media"][0]["shortcode_media"]["owner"]["profile_pic_url"]
+                "username": data["username"],
+                "pk": data["owner_id"],
+                "profile_pic_url": data["graphql_media"][0]["shortcode_media"]["owner"]["profile_pic_url"] if "graphql_media" in data and len(data["graphql_media"]) > 0 else ""
             }
         }
 
@@ -213,6 +215,9 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
 
         # Get data from HTML
         embed_data = self._parse_embed(post_id, api_resp)
+        if "error" in embed_data and "Not found" in embed_data["error"]:
+            raise Exception("Post not found")
+
         json_ld = self._parse_json_ld(post_id)
 
         # Get timestamp
@@ -236,7 +241,7 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                                 "node": {
                                     "__typename": "GraphVideo",
                                     "dimensions": { "height": 0, "width": 0 },
-                                     "video_url": video["contentUrl"],
+                                    "video_url": video["contentUrl"],
                                 }
                             }
                             for video in video_data
