@@ -279,8 +279,6 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                 node.replace_with("\n")
             caption_text = caption.text().strip()
 
-        like_count = int(tree.css_first(".SocialProof").text().strip("like").strip("likes").strip().replace(',', ''))
-
         return {
             "shortcode_media": {
                 "shortcode": shortcode,
@@ -288,7 +286,6 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                 "node": {"__typename": typename, "display_resources": [{"config_width": 0, "config_height": 0, "src": display_url}]},
                 "edge_media_to_caption": {"edges": [{"node": {"text": caption_text}}]},
                 "dimensions": {"height": 1, "width": 1},
-                "edge_liked_by": {"count": like_count},
                 "video_blocked": "WatchOnInstagram" in html,
             }
         }
@@ -334,7 +331,6 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                         "text": description[0]["node"]["text"]
                     },
                     "carousel_media": self._transform_to_carousel_media(data),
-                    "like_count": data["edge_liked_by"]["count"],
                     "taken_at": data["taken_at_timestamp"]
                 }
             ]
