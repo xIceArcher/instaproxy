@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import codecs
-from datetime import datetime, timedelta
+from datetime import timedelta
 import json
 import logging
 import requests
@@ -11,6 +11,7 @@ import esprima
 from flask import Flask
 from flask.wrappers import Response
 from logdecorator import log_on_start, log_on_error
+import orjson
 import redis
 from selectolax.parser import HTMLParser
 from instagram_private_api import (
@@ -213,44 +214,16 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                     # json.loads to unescape the JSON
                     return json.loads(json.loads(token.value))["gql_data"]
 
-        # Get data from HTML
-        embed_data = self._parse_embed(post_id, api_resp)
-        if "error" in embed_data and "Not found" in embed_data["error"]:
-            raise Exception("Post not found")
+        # GraphQL
+        params = {
+            "query_hash": "b3055c01b4b222b8a47dc12b090e4e64",
+            "variables": orjson.dumps({"shortcode": post_id}).decode(),
+        }
+        response = requests.get(
+            "https://www.instagram.com/graphql/query/", params=params
+        )
 
-        json_ld = self._parse_json_ld(post_id)
-
-        # Get timestamp
-        if isinstance(json_ld, list):
-            json_ld = json_ld[0]
-        embed_data["shortcode_media"]["taken_at_timestamp"] = int(datetime.strptime(json_ld['dateCreated'], "%Y-%m-%dT%H:%M:%S%z").timestamp())
-
-        if embed_data["shortcode_media"]["video_blocked"]:
-            video_data = json_ld.get("video")
-            if video_data:
-                if len(video_data) == 1:
-                    embed_data["shortcode_media"]["node"] = {
-                        "__typename": "GraphVideo",
-                        "dimensions": { "height": 0, "width": 0 },
-                        "video_url": video_data[0]["contentUrl"]
-                    }
-                else:
-                    embed_data["shortcode_media"]["edge_sidecar_to_children"] = {
-                        "edges": [
-                            {
-                                "node": {
-                                    "__typename": "GraphVideo",
-                                    "dimensions": { "height": 0, "width": 0 },
-                                    "video_url": video["contentUrl"],
-                                }
-                            }
-                            for video in video_data
-                        ]
-                    }
-
-                embed_data["shortcode_media"]["video_blocked"] = False
-
-        return embed_data
+        return response.json()["data"]
 
     def _parse_embed(self, shortcode, html: str) -> dict:
         tree = HTMLParser(html)
@@ -289,18 +262,6 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                 "video_blocked": "WatchOnInstagram" in html,
             }
         }
-
-    def _parse_json_ld(self, post_id: str) -> dict:
-        resp = requests.get(
-            f"https://www.instagram.com/p/{post_id}/",
-            headers=self.headers
-        )
-
-        tree = HTMLParser(resp.text)
-        json_ld = tree.css_first("script[type='application/ld+json']")
-        if json_ld:
-            return json.loads(json_ld.text())
-        return {}
 
     def _get_user_data(self, user_name):
         api_resp = requests.get(
