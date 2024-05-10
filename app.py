@@ -122,7 +122,7 @@ class InstagramAPIByPrivateAPI(AbstractInstagramAPI):
 
 
 class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
-    def __init__(self, username: str, password: str, settings_file_name: str) -> None:
+    def __init__(self, username: str, password: str, proxies: dict[str, str], settings_file_name: str) -> None:
         super().__init__(username, password, settings_file_name)
 
         self.headers = {
@@ -136,6 +136,7 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.60 Safari/537.36",
             "viewport-width": "1280",
         }
+        self.proxies = proxies
 
     @log_on_start(logging.INFO, "Called {callable.__qualname__:s}: {shortcode}")
     def get_post(self, shortcode):
@@ -219,6 +220,16 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             "query_hash": "b3055c01b4b222b8a47dc12b090e4e64",
             "variables": orjson.dumps({"shortcode": post_id}).decode(),
         }
+
+        if self.proxies:
+            try:
+                response = requests.get(
+                    "https://www.instagram.com/graphql/query/", params=params, proxies=self.proxies
+                )
+                return response.json()["data"]
+            except:
+                pass
+
         response = requests.get(
             "https://www.instagram.com/graphql/query/", params=params
         )
@@ -364,8 +375,8 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
         raise Exception(f"Unknown child type {child['__typename']}")
 
 class InstagramAPIByCache(InstagramAPIByEmbedAPI):
-    def __init__(self, username: str, password: str, settings_file_name: str, host: str, port: int, db: int) -> None:
-        super().__init__(username, password, settings_file_name)
+    def __init__(self, username: str, password: str, proxies: dict[str, str], settings_file_name: str, host: str, port: int, db: int) -> None:
+        super().__init__(username, password, proxies, settings_file_name)
 
         self.cache = redis.Redis(host=host, port=port, db=db)
 
@@ -407,8 +418,8 @@ with open(config_file_path) as f:
     redis_cfg = cfg['redis']
 
 api = InstagramAPIByCache(
-    username=instagram_cfg['username'], password=instagram_cfg['password'], settings_file_name=instagram_cfg['settings_cache_file_path'],
-    host=redis_cfg['host'], port=redis_cfg['port'], db=redis_cfg['db'],
+    username=instagram_cfg['username'], password=instagram_cfg['password'], proxies=instagram_cfg['proxies'], settings_file_name=instagram_cfg['settings_cache_file_path'],
+    host=redis_cfg['host'], port=redis_cfg['port'], db=redis_cfg['db']
 )
 app = Flask(__name__)
 
