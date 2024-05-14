@@ -181,15 +181,7 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
 
     @log_on_error(logging.ERROR, "Called {callable.__qualname__:s} failed: {user_name}, err: {e!r}", on_exceptions=Exception)
     def _get_user(self, user_name):
-        data = self._get_user_data(user_name)["context"]
-        return {
-            "user": {
-                "full_name": data["full_name"],
-                "username": data["username"],
-                "pk": data["owner_id"],
-                "profile_pic_url": data["graphql_media"][0]["shortcode_media"]["owner"]["profile_pic_url"] if "graphql_media" in data and len(data["graphql_media"]) > 0 else ""
-            }
-        }
+        return self._get_user_data(user_name)
 
     def _get_post_data(self, post_id):
         api_resp = requests.get(
@@ -286,7 +278,23 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             for token in tokenized:
                 if "full_name" in token.value:
                     # json.loads to unescape the JSON
-                    return json.loads(json.loads(token.value))
+                    data = json.loads(json.loads(token.value))["context"]
+                    return {
+                        "user": {
+                            "full_name": data["full_name"],
+                            "username": data["username"],
+                            "profile_pic_url": data["graphql_media"][0]["shortcode_media"]["owner"]["profile_pic_url"] if "graphql_media" in data and len(data["graphql_media"]) > 0 else ""
+                        }
+                    }
+
+        if self.proxies:
+            try:
+                response = requests.get(
+                    "https://i.instagram.com/api/v1/users/web_profile_info", params={"username": user_name}, headers={"User-Agent": "iphone_ua", "x-ig-app-id": "936619743392459"}, proxies=self.proxies
+                )
+                return response.json()["data"]
+            except:
+                pass
 
         return {}
 
