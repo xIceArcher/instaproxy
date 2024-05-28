@@ -283,6 +283,7 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                         "user": {
                             "full_name": data["full_name"],
                             "username": data["username"],
+                            "pk": data["owner_id"],
                             "profile_pic_url": data["graphql_media"][0]["shortcode_media"]["owner"]["profile_pic_url"] if "graphql_media" in data and len(data["graphql_media"]) > 0 else ""
                         }
                     }
@@ -292,7 +293,15 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                 response = requests.get(
                     "https://i.instagram.com/api/v1/users/web_profile_info", params={"username": user_name}, headers={"User-Agent": "iphone_ua", "x-ig-app-id": "936619743392459"}, proxies=self.proxies
                 )
-                return response.json()["data"]
+                data = response.json()["data"]["user"]
+                return {
+                    "user": {
+                        "full_name": data.get("full_name", ""),
+                        "username": data.get("username", user_name),
+                        "pk": int(data["id"]),
+                        "profile_pic_url": data.get("profile_pic_url", ""),
+                    }
+                }
             except:
                 pass
 
