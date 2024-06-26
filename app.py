@@ -36,9 +36,10 @@ class AbstractInstagramAPI(ABC):
 class InstagramAPIByPrivateAPI(AbstractInstagramAPI):
     b64alphabetmap = {a: i for i, a in enumerate('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_')}
 
-    def __init__(self, username: str, password: str, settings_file_name: str) -> None:
+    def __init__(self, username: str, password: str, proxies: dict[str, str], settings_file_name: str) -> None:
         self.username: str = username
         self.password: str = password
+        self.proxies: dict[str, str] = proxies
         self.settings_file_name: str = settings_file_name
         self.device_id: str
         self.raw_api: Client
@@ -80,7 +81,7 @@ class InstagramAPIByPrivateAPI(AbstractInstagramAPI):
             if not os.path.isfile(self.settings_file_name):
                 self.raw_api = Client(
                     self.username, self.password,
-                    on_login=lambda x: self.login_callback(x))
+                    on_login=lambda x: self.login_callback(x), proxy=self.proxies['http'])
             else:
                 with open(self.settings_file_name) as file_data:
                     cached_settings = json.load(file_data, object_hook=self.from_json)
@@ -88,7 +89,7 @@ class InstagramAPIByPrivateAPI(AbstractInstagramAPI):
                 self.device_id = cached_settings.get('device_id')
                 self.raw_api = Client(
                     self.username, self.password,
-                    settings=cached_settings)
+                    settings=cached_settings, proxy=self.proxies['http'])
         except (ClientCookieExpiredError, ClientLoginRequiredError):
             self.relogin()
 
@@ -96,7 +97,7 @@ class InstagramAPIByPrivateAPI(AbstractInstagramAPI):
         self.raw_api = Client(
             self.username, self.password,
             device_id=self.device_id,
-            on_login=lambda x: self.login_callback(x))
+            on_login=lambda x: self.login_callback(x), proxy=self.proxies['http'])
 
     def login_callback(self, api):
         self.device_id = api.settings.get('device_id')
@@ -123,7 +124,7 @@ class InstagramAPIByPrivateAPI(AbstractInstagramAPI):
 
 class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
     def __init__(self, username: str, password: str, proxies: dict[str, str], settings_file_name: str) -> None:
-        super().__init__(username, password, settings_file_name)
+        super().__init__(username, password, proxies, settings_file_name)
 
         self.headers = {
             "authority": "www.instagram.com",
@@ -386,8 +387,8 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                     }
                 ]
             }
-        elif child["__typename"] == "StoryVideo":
-            raise Exception("StoryVideo type not supported")
+        elif child["__typename"] in ("StoryVideo", "GraphStoryVideo"):
+            raise Exception(f"{child['__typename']} type not supported")
 
         raise Exception(f"Unknown child type {child['__typename']}")
 
