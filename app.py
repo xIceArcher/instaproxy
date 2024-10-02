@@ -273,21 +273,22 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             headers=self.headers
         ).text
 
-        data = re.findall(r'<script>(requireLazy\(\["TimeSliceImpl".*)<\/script>', api_resp)
-        if data and "full_name" in data[0]:
-            tokenized = esprima.tokenize(data[0])
-            for token in tokenized:
-                if "full_name" in token.value:
-                    # json.loads to unescape the JSON
-                    data = json.loads(json.loads(token.value))["context"]
-                    return {
-                        "user": {
-                            "full_name": data["full_name"],
-                            "username": data["username"],
-                            "pk": data["owner_id"],
-                            "profile_pic_url": data["graphql_media"][0]["shortcode_media"]["owner"]["profile_pic_url"] if "graphql_media" in data and len(data["graphql_media"]) > 0 else ""
+        data = re.findall(r'(requireLazy\(\["TimeSliceImpl".*)', api_resp)
+        for d in data:
+            if d and "full_name" in d:
+                tokenized = esprima.tokenize(d)
+                for token in tokenized:
+                    if "full_name" in token.value:
+                        # json.loads to unescape the JSON
+                        data = json.loads(json.loads(token.value))["context"]
+                        return {
+                            "user": {
+                                "full_name": data["full_name"],
+                                "username": data["username"],
+                                "pk": data["owner_id"],
+                                "profile_pic_url": data["graphql_media"][0]["shortcode_media"]["owner"]["profile_pic_url"] if "graphql_media" in data and len(data["graphql_media"]) > 0 else ""
+                            }
                         }
-                    }
 
         if self.proxies:
             try:
@@ -306,7 +307,7 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             except:
                 pass
 
-        return {}
+        raise Exception("Cannot get user")
 
     def _transform_to_post(self, data):
         data = data["shortcode_media"]
