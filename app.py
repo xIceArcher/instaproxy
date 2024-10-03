@@ -200,13 +200,14 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                 return gql_data
 
         # TimeSliceImpl
-        data = re.findall(r'<script>(requireLazy\(\["TimeSliceImpl".*)<\/script>', api_resp)
-        if data and "shortcode_media" in data[0]:
-            tokenized = esprima.tokenize(data[0])
-            for token in tokenized:
-                if "shortcode_media" in token.value:
-                    # json.loads to unescape the JSON
-                    return json.loads(json.loads(token.value))["gql_data"]
+        data = re.findall(r'(requireLazy\(\["TimeSliceImpl".*)', api_resp)
+        for d in data:
+            if d and "shortcode_media" in d:
+                tokenized = esprima.tokenize(d)
+                for token in tokenized:
+                    if "shortcode_media" in token.value:
+                        # json.loads to unescape the JSON
+                        return json.loads(json.loads(token.value))["gql_data"]
 
         # GraphQL
         params = {
