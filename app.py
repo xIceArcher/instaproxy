@@ -452,7 +452,7 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                     }
                 ]
             }
-        elif child["__typename"] in ("StoryVideo", "GraphStoryVideo"):
+        elif child["__typename"] in ("StoryVideo", "GraphStoryVideo", "XDTStoryVideo"):
             raise Exception(f"{child['__typename']} type not supported")
 
         raise Exception(f"Unknown child type {child['__typename']}")
