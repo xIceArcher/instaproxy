@@ -205,9 +205,12 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             if d and "shortcode_media" in d:
                 tokenized = esprima.tokenize(d)
                 for token in tokenized:
-                    if "shortcode_media" in token.value:
-                        # json.loads to unescape the JSON
-                        return json.loads(json.loads(token.value))["gql_data"]
+                    try:
+                        if "shortcode_media" in token.value:
+                            # json.loads to unescape the JSON
+                            return json.loads(json.loads(token.value))["gql_data"]
+                    except (json.JSONDecodeError, KeyError):
+                        continue
 
         # GraphQL
         gql_params = {
@@ -336,16 +339,19 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                 tokenized = esprima.tokenize(d)
                 for token in tokenized:
                     if "full_name" in token.value:
-                        # json.loads to unescape the JSON
-                        data = json.loads(json.loads(token.value))["context"]
-                        return {
-                            "user": {
-                                "full_name": data["full_name"],
-                                "username": data["username"],
-                                "pk": data["owner_id"],
-                                "profile_pic_url": data["graphql_media"][0]["shortcode_media"]["owner"]["profile_pic_url"] if "graphql_media" in data and len(data["graphql_media"]) > 0 else ""
+                        try:
+                            # json.loads to unescape the JSON
+                            data = json.loads(json.loads(token.value))["context"]
+                            return {
+                                "user": {
+                                    "full_name": data["full_name"],
+                                    "username": data["username"],
+                                    "pk": data["owner_id"],
+                                    "profile_pic_url": data["graphql_media"][0]["shortcode_media"]["owner"]["profile_pic_url"] if "graphql_media" in data and len(data["graphql_media"]) > 0 else ""
+                                }
                             }
-                        }
+                        except (json.JSONDecodeError, KeyError):
+                            continue
 
         if self.proxies:
             try:
