@@ -1,0 +1,8 @@
+esprima==4.0.1
+Flask==3.1.0
+instagram_private_api==1.6.0
+logdecorator==2.5
+orjson==3.10.15
+redis==5.2.1
+Requests==2.32.3
+selectolax==0.3.28
