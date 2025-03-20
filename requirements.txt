@@ -6,3 +6,4 @@ orjson==3.10.15
 redis==5.2.1
 Requests==2.32.3
 selectolax==0.3.28
+gunicorn==23.0.0
