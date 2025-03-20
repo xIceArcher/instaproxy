@@ -498,7 +498,10 @@ class InstagramAPIByCache(InstagramAPIByEmbedAPI):
         return val
 
 
-config_file_path = './config.json'
+config_file_path = os.environ.get("CONFIG_PATH")
+if not config_file_path:
+    config_file_path = "./config.json"
+
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 with open(config_file_path) as f:
