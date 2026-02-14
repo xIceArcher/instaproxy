@@ -17,3 +17,5 @@
 # Log files
 logs.*
 *.log
+
+.venv
