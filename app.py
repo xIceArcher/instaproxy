@@ -15,9 +15,31 @@ import orjson
 import redis
 from selectolax.parser import HTMLParser
 from instagram_private_api import (
-    Client, ClientCookieExpiredError, ClientLoginRequiredError
+    Client, ClientCookieExpiredError, ClientLoginRequiredError, constants
 )
 
+constants.Constants.APP_VERSION = "410.0.0.0.96"
+constants.Constants.ANDROID_VERSION = 33
+constants.Constants.ANDROID_RELEASE = "13"
+constants.Constants.PHONE_MANUFACTURER = "xiaomi"
+constants.Constants.PHONE_DEVICE = "M2007J20CG"
+constants.Constants.PHONE_MODEL = "surya"
+constants.Constants.PHONE_DPI = "480dpi"
+constants.Constants.PHONE_RESOLUTION = "1080x2400"
+constants.Constants.PHONE_CHIPSET = "qcom"
+constants.Constants.VERSION_CODE = "641123490"
+constants.Constants.USER_AGENT = constants.Constants.USER_AGENT_FORMAT.format(**{
+    'app_version': constants.Constants.APP_VERSION,
+    'android_version': constants.Constants.ANDROID_VERSION,
+    'android_release': constants.Constants.ANDROID_RELEASE,
+    'brand': constants.Constants.PHONE_MANUFACTURER,
+    'device': constants.Constants.PHONE_DEVICE,
+    'model': constants.Constants.PHONE_MODEL,
+    'dpi': constants.Constants.PHONE_DPI,
+    'resolution': constants.Constants.PHONE_RESOLUTION,
+    'chipset': constants.Constants.PHONE_CHIPSET,
+    'version_code': constants.Constants.VERSION_CODE}
+)
 
 class AbstractInstagramAPI(ABC):
     @abstractmethod
