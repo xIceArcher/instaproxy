@@ -6,14 +6,13 @@ import logging
 import requests
 import re
 import os
+import urllib.parse
 
 import esprima
 from flask import Flask
 from flask.wrappers import Response
 from logdecorator import log_on_start, log_on_error
-import orjson
 import redis
-from selectolax.parser import HTMLParser
 from instagram_private_api import (
     Client, ClientCookieExpiredError, ClientLoginRequiredError, constants
 )
@@ -234,120 +233,36 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                     except (json.JSONDecodeError, KeyError):
                         continue
 
-        # GraphQL
-        gql_params = {
-            "av": "0",
-            "__d": "www",
-            "__user": "0",
-            "__a": "1",
-            "__req": "k",
-            "__hs": "19888.HYP:instagram_web_pkg.2.1..0.0",
-            "dpr": "2",
-            "__ccg": "UNKNOWN",
-            "__rev": "1014227545",
-            "__s": "trbjos:n8dn55:yev1rm",
-            "__hsi": "7380500578385702299",
-            "__dyn": "7xeUjG1mxu1syUbFp40NonwgU7SbzEdF8aUco2qwJw5ux609vCwjE1xoswaq0yE6ucw5Mx62G5UswoEcE7O2l0Fwqo31w9a9wtUd8-U2zxe2GewGw9a362W2K0zK5o4q3y1Sx-0iS2Sq2-azo7u3C2u2J0bS1LwTwKG1pg2fwxyo6O1FwlEcUed6goK2O4UrAwCAxW6Uf9EObzVU8U",
-            "__csr": "n2Yfg_5hcQAG5mPtfEzil8Wn-DpKGBXhdczlAhrK8uHBAGuKCJeCieLDyExenh68aQAKta8p8ShogKkF5yaUBqCpF9XHmmhoBXyBKbQp0HCwDjqoOepV8Tzk8xeXqAGFTVoCciGaCgvGUtVU-u5Vp801nrEkO0rC58xw41g0VW07ISyie2W1v7F0CwYwwwvEkw8K5cM0VC1dwdi0hCbc094w6MU1xE02lzw",
-            "__comet_req": "7",
-            "lsd": "AVoPBTXMX0Y",
-            "jazoest": "2882",
-            "__spin_r": "1014227545",
-            "__spin_b": "trunk",
-            "__spin_t": "1718406700",
-            "fb_api_caller_class": "RelayModern",
-            "fb_api_req_friendly_name": "PolarisPostActionLoadPostQueryQuery",
-            "variables": orjson.dumps(
-                {
-                    "shortcode": post_id,
-                    "fetch_comment_count": 40,
-                    "parent_comment_count": 24,
-                    "child_comment_count": 3,
-                    "fetch_like_count": 10,
-                    "fetch_tagged_user_count": None,
-                    "fetch_preview_comment_count": 2,
-                    "has_threaded_comments": True,
-                    "hoisted_comment_id": None,
-                    "hoisted_reply_id": None,
-                }
-            ).decode(),
-            "server_timestamps": "true",
-            "doc_id": "25531498899829322",
-        }
 
-        url = "https://www.instagram.com/graphql/query/"
+        # Finally fall back to the public GraphQL endpoint.
+        return self._get_public_graphql_post_data(post_id)
 
+    def _get_public_graphql_post_data(self, shortcode):
+        query_id = "27060936386852803"
+        url = (
+            f"https://www.instagram.com/graphql/query/?doc_id={query_id}"
+            f"&variables={urllib.parse.quote_plus(json.dumps({'shortcode': shortcode}))}"
+        )
         headers = {
-            "Accept": "*/*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Origin": "https://www.instagram.com",
-            "Priority": "u=1, i",
-            "Sec-Ch-Prefers-Color-Scheme": "dark",
-            "Sec-Ch-Ua": '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
-            "Sec-Ch-Ua-Full-Version-List": '"Google Chrome";v="125.0.6422.142", "Chromium";v="125.0.6422.142", "Not.A/Brand";v="24.0.0.0"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Model": "",
-            "Sec-Ch-Ua-Platform": '"macOS"',
-            "Sec-Ch-Ua-Platform-Version": '"12.7.4"',
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            "X-Asbd-Id": "129477",
-            "X-Bloks-Version-Id": "e2004666934296f275a5c6b2c9477b63c80977c7cc0fd4b9867cb37e36092b68",
-            "X-Fb-Friendly-Name": "PolarisPostActionLoadPostQueryQuery",
-            "X-Ig-App-Id": "936619743392459",
+            **self.headers,
+            "X-IG-App-ID": "936619743392459",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": f"https://www.instagram.com/p/{shortcode}/",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
         }
 
-        if self.proxies:
-            try:
-                response = requests.post(url, headers=headers, data=gql_params, proxies=self.proxies)
-                return response.json()["data"]
-            except:
-                pass
-
-        response = requests.post(url, headers=headers, data=gql_params)
-        return response.json()["data"]
-
-
-    def _parse_embed(self, shortcode, html: str) -> dict:
-        tree = HTMLParser(html)
-        typename = "GraphImage"
-        display_url = tree.css_first(".EmbeddedMediaImage")
-        if not display_url:
-            typename = "GraphVideo"
-            display_url = tree.css_first("video")
-        if not display_url:
-            return {"error": "Not found"}
-        display_url = display_url.attrs["src"]
-        username = tree.css_first(".UsernameText").text()
-
-        # Remove div class CaptionComments, CaptionUsername
-        caption_comments = tree.css_first(".CaptionComments")
-        if caption_comments:
-            caption_comments.remove()
-        caption_username = tree.css_first(".CaptionUsername")
-        if caption_username:
-            caption_username.remove()
-
-        caption_text = ""
-        caption = tree.css_first(".Caption")
-        if caption:
-            for node in caption.css("br"):
-                node.replace_with("\n")
-            caption_text = caption.text().strip()
-
-        return {
-            "shortcode_media": {
-                "shortcode": shortcode,
-                "owner": {"username": username},
-                "node": {"__typename": typename, "display_resources": [{"config_width": 0, "config_height": 0, "src": display_url}]},
-                "edge_media_to_caption": {"edges": [{"node": {"text": caption_text}}]},
-                "dimensions": {"height": 1, "width": 1},
-                "video_blocked": "WatchOnInstagram" in html,
-            }
-        }
+        try:
+            resp = requests.get(url, headers=headers, timeout=30, proxies=self.proxies)
+            if resp.status_code != 200:
+                return None
+            data = resp.json().get("data", {})
+            media_info = data.get("xdt_api__v1__media__shortcode__web_info", {})
+            items = media_info.get("items")
+            if items and isinstance(items, list) and len(items) > 0:
+                return {"shortcode_media": items[0]}
+        except Exception:
+            return None
+        return None
 
     def _get_user_data(self, user_name):
         api_resp = requests.get(
@@ -400,18 +315,25 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
         except KeyError:
             data = data["xdt_shortcode_media"]
 
-        description = data["edge_media_to_caption"]["edges"] or [{"node": {"text": ""}}]
+        if "edge_media_to_caption" in data:
+            description = data["edge_media_to_caption"]["edges"] or [{"node": {"text": ""}}]
+            caption_text = description[0]["node"]["text"]
+        else:
+            caption_text = data.get("caption", {}).get("text", "")
+
+        shortcode = data.get("shortcode") or data.get("code")
+        taken_at = data.get("taken_at") or data.get("taken_at_timestamp")
 
         return {
             "items": [
                 {
-                    "code": data["shortcode"],
+                    "code": shortcode,
                     "user": self._transform_to_user(data),
                     "caption": {
-                        "text": description[0]["node"]["text"]
+                        "text": caption_text
                     },
                     "carousel_media": self._transform_to_carousel_media(data),
-                    "taken_at": data["taken_at_timestamp"]
+                    "taken_at": taken_at,
                 }
             ]
         }
@@ -426,21 +348,22 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
         meta = {
             "id": data["id"],
             "media_type": 1 if "image_versions2" in media else 2,
-            "taken_at": data["taken_at_timestamp"],
+            "taken_at": data["taken_at"],
         }
 
         return media | meta
 
     def _transform_to_user(self, data):
+        owner = data.get("owner") or data.get("user") or {}
         ret = {
-            "username": data["owner"]["username"],
+            "username": owner.get("username"),
         }
 
-        if "id" in data["owner"]:
-            ret["pk"] = data["owner"]["id"]
+        if "id" in owner:
+            ret["pk"] = owner["id"]
 
-        if "profile_pic_url" in data["owner"]:
-            ret["profile_pic_url"] = data["owner"]["profile_pic_url"]
+        if "profile_pic_url" in owner:
+            ret["profile_pic_url"] = owner["profile_pic_url"]
 
         return ret
 
@@ -457,7 +380,13 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
     def _transform_gql_child(self, child):
         child = child.get("node", child)
 
-        if child["__typename"] in ("GraphImage", "StoryImage", "XDTGraphImage"):
+        if "image_versions2" in child:
+            return {"image_versions2": child["image_versions2"]}
+        if "video_versions" in child:
+            return {"video_versions": child["video_versions"]}
+
+        typename = child.get("__typename")
+        if typename in ("GraphImage", "StoryImage", "XDTGraphImage"):
             return {
                 "image_versions2": {
                     "candidates": [
@@ -470,7 +399,7 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                     ]
                 }
             }
-        elif child["__typename"] in ("GraphVideo", "XDTGraphVideo"):
+        elif typename in ("GraphVideo", "XDTGraphVideo"):
             return {
                 "video_versions": [
                     {
@@ -480,10 +409,10 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                     }
                 ]
             }
-        elif child["__typename"] in ("StoryVideo", "GraphStoryVideo", "XDTStoryVideo"):
-            raise Exception(f"{child['__typename']} type not supported")
+        elif typename in ("StoryVideo", "GraphStoryVideo", "XDTStoryVideo"):
+            raise Exception(f"{typename} type not supported")
 
-        raise Exception(f"Unknown child type {child['__typename']}")
+        raise Exception(f"Unknown child type {typename}")
 
 class InstagramAPIByCache(InstagramAPIByEmbedAPI):
     def __init__(self, username: str, password: str, proxies: dict[str, str], settings_file_name: str, host: str, port: int, db: int) -> None:
