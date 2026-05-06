@@ -345,10 +345,11 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             data = data["xdt_shortcode_media"]
 
         media = self._transform_to_carousel_media(data)[0]
+        taken_at = data.get("taken_at") or data.get("taken_at_timestamp")
         meta = {
             "id": data["id"],
             "media_type": 1 if "image_versions2" in media else 2,
-            "taken_at": data["taken_at"],
+            "taken_at": taken_at,
         }
 
         return media | meta
