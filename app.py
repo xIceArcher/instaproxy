@@ -381,10 +381,10 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
     def _transform_gql_child(self, child):
         child = child.get("node", child)
 
-        if "image_versions2" in child:
-            return {"image_versions2": child["image_versions2"]}
         if "video_versions" in child:
             return {"video_versions": child["video_versions"]}
+        if "image_versions2" in child:
+            return {"image_versions2": child["image_versions2"]}
 
         typename = child.get("__typename")
         if typename in ("GraphImage", "StoryImage", "XDTGraphImage"):
