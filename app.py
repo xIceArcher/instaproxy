@@ -290,6 +290,11 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                         except (json.JSONDecodeError, KeyError):
                             continue
 
+        # Try contextJSON as fallback
+        context_data = self._get_user_data_from_context_json(api_resp)
+        if context_data:
+            return context_data
+
         if self.proxies:
             try:
                 response = requests.get(
@@ -308,6 +313,30 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                 pass
 
         raise Exception("Cannot get user")
+
+    def _get_user_data_from_context_json(self, api_resp):
+        """Extract user data from contextJSON in the embed page response."""
+        try:
+            # Find the contextJSON pattern
+            match = re.search(r'contextJSON":"([^"\\]+(?:\\.[^"\\]*)*)"', api_resp)
+            if match:
+                json_str = match.group(1)
+                # Unescape the JSON string (it has escaped quotes)
+                unescaped = json_str.replace('\\"', '"')
+                data = json.loads(unescaped)
+                if "context" in data:
+                    ctx = data["context"]
+                    return {
+                        "user": {
+                            "full_name": ctx.get("full_name", ""),
+                            "username": ctx.get("username", ""),
+                            "pk": ctx.get("owner_id"),
+                            "profile_pic_url": ctx.get("profile_pic_url", ""),
+                        }
+                    }
+        except (json.JSONDecodeError, KeyError, AttributeError):
+            pass
+        return None
 
     def _transform_to_post(self, data):
         try:
