@@ -208,7 +208,8 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
     def _get_post_data(self, post_id):
         api_resp = requests.get(
             f"https://www.instagram.com/p/{post_id}/embed/captioned",
-            headers=self.headers
+            headers=self.headers,
+            proxies=self.proxies
         ).text
 
         # additionalDataLoaded
@@ -267,7 +268,8 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
     def _get_user_data(self, user_name):
         api_resp = requests.get(
             f"https://www.instagram.com/{user_name}/embed",
-            headers=self.headers
+            headers=self.headers,
+            proxies=self.proxies
         ).text
 
         data = re.findall(r'(requireLazy\(\["TimeSliceImpl".*)', api_resp)
