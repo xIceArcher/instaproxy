@@ -350,7 +350,7 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             description = data["edge_media_to_caption"]["edges"] or [{"node": {"text": ""}}]
             caption_text = description[0]["node"]["text"]
         else:
-            caption_text = data.get("caption", {}).get("text", "")
+            caption_text = (data.get("caption") or {}).get("text", "")
 
         shortcode = data.get("shortcode") or data.get("code")
         taken_at = data.get("taken_at") or data.get("taken_at_timestamp")
