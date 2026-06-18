@@ -418,7 +418,17 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             return {"image_versions2": child["image_versions2"]}
 
         typename = child.get("__typename")
-        if typename in ("GraphImage", "StoryImage", "XDTGraphImage"):
+        if typename in ("GraphVideo", "XDTGraphVideo") or (typename is None and child.get("is_video")):
+            return {
+                "video_versions": [
+                    {
+                        "width": child["dimensions"]["height"],
+                        "height": child["dimensions"]["width"],
+                        "url": child["video_url"]
+                    }
+                ]
+            }
+        elif typename in ("GraphImage", "StoryImage", "XDTGraphImage") or typename is None:
             return {
                 "image_versions2": {
                     "candidates": [
@@ -430,16 +440,6 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                         for display_resource in child["display_resources"]
                     ]
                 }
-            }
-        elif typename in ("GraphVideo", "XDTGraphVideo"):
-            return {
-                "video_versions": [
-                    {
-                        "width": child["dimensions"]["height"],
-                        "height": child["dimensions"]["width"],
-                        "url": child["video_url"]
-                    }
-                ]
             }
         elif typename in ("StoryVideo", "GraphStoryVideo", "XDTStoryVideo"):
             raise Exception(f"{typename} type not supported")
