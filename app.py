@@ -212,14 +212,7 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             proxies=self.proxies
         ).text
 
-        # additionalDataLoaded
-        data = re.findall(
-            r"window\.__additionalDataLoaded\('extra',(.*)\);<\/script>", api_resp
-        )
-        if data:
-            gql_data = json.loads(data[0])
-            if gql_data and gql_data.get("shortcode_media"):
-                return gql_data
+        ret = None
 
         # TimeSliceImpl
         data = re.findall(r'(requireLazy\(\["TimeSliceImpl".*)', api_resp)
@@ -230,12 +223,19 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
                     try:
                         if "shortcode_media" in token.value:
                             # json.loads to unescape the JSON
-                            return json.loads(json.loads(token.value))["gql_data"]
+                            ret = json.loads(json.loads(token.value))["gql_data"]
                     except (json.JSONDecodeError, KeyError):
                         continue
 
+        if ret is not None and "shortcode_media" in ret and "taken_at" not in ret["shortcode_media"] and "taken_at_timestamp" not in ret["shortcode_media"]:
+            # If we don't have the taken_at timestamp, try to get it from the public GraphQL endpoint
+            graphql_data = self._get_public_graphql_post_data(post_id)
+            if graphql_data is not None and "shortcode_media" in graphql_data:
+                ret["shortcode_media"]["taken_at"] = graphql_data["shortcode_media"].get("taken_at") or graphql_data["shortcode_media"].get("taken_at_timestamp")
+            return ret
 
-        # Finally fall back to the public GraphQL endpoint.
+        # Finally fall back to the public GraphQL endpoint
+        # This really only seems to work for posts that only have one image (which fails the TimeSliceImpl parsing)
         return self._get_public_graphql_post_data(post_id)
 
     def _get_public_graphql_post_data(self, shortcode):
