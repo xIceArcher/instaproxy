@@ -114,8 +114,11 @@ class InstagramService:
         response = self._request(url, GRAPHQL_HEADERS)
         if response is None:
             return None
+        response_json = response.json()
+        if "errors" in response_json:
+            return None
         try:
-            items = response.json().get("data", {}).get("xdt_api__v1__media__shortcode__web_info", {}).get("items")
+            items = response_json.get("data", {}).get("xdt_api__v1__media__shortcode__web_info", {}).get("items")
         except ValueError:
             return None
         return items[0] if isinstance(items, list) and items and isinstance(items[0], dict) else None
@@ -288,6 +291,10 @@ def create_app() -> Flask:
     @app.get("/instagram/u/<username>")
     def get_user_handler(username: str) -> Response:
         return Response(json.dumps(get_user(username)), mimetype="application/json")
+
+    @app.errorhandler(LookupError)
+    def handle_lookup_error(error: LookupError) -> Response:
+        return Response(json.dumps({"error": str(error)}), status=404, mimetype="application/json")
 
     return app
 
