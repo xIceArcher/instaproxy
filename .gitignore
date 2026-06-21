@@ -21,3 +21,5 @@ logs.*
 .venv
 
 __pycache__/
+
+**.cover
