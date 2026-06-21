@@ -169,7 +169,16 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
 
     @log_on_error(logging.ERROR, "Called {callable.__qualname__:s} failed: {shortcode}, err: {e!r}", on_exceptions=Exception)
     def _get_post(self, shortcode):
-        post = self._transform_to_post(self._get_post_data(shortcode))
+        post = None
+
+        try:
+            post = self._transform_to_post(self._get_post_data(shortcode))
+        except Exception:
+            pass            
+
+        if post is None:
+            post = self._transform_to_post(self._get_public_graphql_post_data(shortcode))
+            
         post["items"][0]["user"] = self.get_user(post["items"][0]["user"]["username"])["user"]
 
         return post
@@ -192,7 +201,17 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
             story_id, remainder = divmod(story_id, 64)
             shortcode = alphabet[remainder] + shortcode
 
-        return self._transform_to_reel(self._get_post_data(shortcode))
+        story = None
+
+        try:
+            story = self._transform_to_reel(self._get_post_data(shortcode))
+        except Exception:
+            pass
+
+        if story is None:
+            story = self._transform_to_reel(self._get_public_graphql_post_data(shortcode))
+
+        return story
 
     @log_on_start(logging.INFO, "Called {callable.__qualname__:s}: {user_name}")
     def get_user(self, user_name):
@@ -229,14 +248,13 @@ class InstagramAPIByEmbedAPI(InstagramAPIByPrivateAPI):
 
         if ret is not None and "shortcode_media" in ret and "taken_at" not in ret["shortcode_media"] and "taken_at_timestamp" not in ret["shortcode_media"]:
             # If we don't have the taken_at timestamp, try to get it from the public GraphQL endpoint
+            # The reason why we don't just always use the public GraphQL endpoint is that it only seems to work for single image posts, and not for carousels or videos, while the TimeSliceImpl data seems to be available for all types of posts
             graphql_data = self._get_public_graphql_post_data(post_id)
             if graphql_data is not None and "shortcode_media" in graphql_data:
                 ret["shortcode_media"]["taken_at"] = graphql_data["shortcode_media"].get("taken_at") or graphql_data["shortcode_media"].get("taken_at_timestamp")
             return ret
 
-        # Finally fall back to the public GraphQL endpoint
-        # This really only seems to work for posts that only have one image (which fails the TimeSliceImpl parsing)
-        return self._get_public_graphql_post_data(post_id)
+        return None
 
     def _get_public_graphql_post_data(self, shortcode):
         query_id = "27060936386852803"
