@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
 import re
 import unicodedata
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Any, TypeVar
 from urllib.parse import quote_plus
 
 import esprima
@@ -42,6 +44,7 @@ USER_HEADERS = {
     "X-IG-App-ID": "936619743392459",
 }
 USER_API_HOSTS = ("i.instagram.com", "www.instagram.com")
+T = TypeVar("T")
 
 cache = Cache()
 
@@ -91,7 +94,7 @@ class InstagramService:
     # Network helpers
 
     @staticmethod
-    def _try_methods[T](methods: Iterable[Callable[[], T | None]]) -> T | None:
+    def _try_methods(methods: Iterable[Callable[[], T | None]]) -> T | None:
         rate_limit_error = None
         for method in methods:
             try:
