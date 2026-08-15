@@ -66,9 +66,7 @@ class InstagramService:
 
     def __init__(self, session: requests.Session | None = None, proxy_url: str | None = None) -> None:
         self.session = session or requests.Session(impersonate="safari15_5")
-        self.proxies = (
-            requests.ProxySpec(http=proxy_url, https=proxy_url) if proxy_url else None
-        )
+        self.proxy_url = proxy_url
 
     # Public API
 
@@ -129,7 +127,7 @@ class InstagramService:
                 url,
                 headers=headers,
                 timeout=30,
-                proxies=self.proxies,
+                proxy=self.proxy_url,
             )
         except requests.RequestsError as error:
             raise InstagramRetryableError() from error
