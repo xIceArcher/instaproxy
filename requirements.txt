@@ -5,6 +5,7 @@ instagram_private_api==1.6.0
 logdecorator==2.5
 orjson==3.10.15
 redis==5.2.1
-Requests==2.32.3
+curl_cffi==0.16.0
+tenacity==9.1.4
 selectolax==0.3.28
 gunicorn==23.0.0

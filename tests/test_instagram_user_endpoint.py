@@ -55,6 +55,15 @@ class InstagramUserEndpointTests(unittest.TestCase):
             62915730120,
         )
 
+    def test_sayuridate_official(self):
+        payload = fetch_user("sayuridate_official")
+        self.assert_user(
+            payload,
+            "伊達さゆり",
+            "sayuridate_official",
+            47192506057,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

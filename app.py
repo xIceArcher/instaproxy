@@ -3,13 +3,15 @@ import logging
 import os
 import re
 import unicodedata
+from collections.abc import Callable, Iterable
 from typing import Any
 from urllib.parse import quote_plus
 
 import esprima
-import requests
+from curl_cffi import requests
 from flask import Flask, Response
 from flask_caching import Cache
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 
 GRAPHQL_QUERY_ID = "27060936386852803"
@@ -35,15 +37,35 @@ GRAPHQL_HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 
+USER_HEADERS = {
+    "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+    "X-IG-App-ID": "936619743392459",
+}
+USER_API_HOSTS = ("i.instagram.com", "www.instagram.com")
+
 cache = Cache()
+
+
+class InstagramRateLimitError(RuntimeError):
+    def __init__(self, retry_after: str | None = None) -> None:
+        super().__init__("Instagram rate limit exceeded")
+        self.retry_after = retry_after
+
+
+class InstagramRetryableError(RuntimeError):
+    def __init__(self, response: Any = None) -> None:
+        super().__init__("Instagram request should be retried")
+        self.response = response
 
 
 class InstagramService:
     STORY_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
     def __init__(self, session: requests.Session | None = None, proxy_url: str | None = None) -> None:
-        self.session = session or requests.Session()
-        self.proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+        self.session = session or requests.Session(impersonate="safari15_5")
+        self.proxies = (
+            requests.ProxySpec(http=proxy_url, https=proxy_url) if proxy_url else None
+        )
 
     # Public API
 
@@ -61,30 +83,62 @@ class InstagramService:
         return self._normalize_story(raw_post, story_id)
 
     def load_user(self, username: str) -> dict[str, Any]:
-        response = self._request(f"https://www.instagram.com/{username}/embed", EMBED_HEADERS)
-        if response is None:
+        raw_user = self._load_raw_user(username)
+        if raw_user is None:
             raise LookupError(f"Instagram user not found: {username}")
-
-        match = re.search(r'contextJSON":"((?:\\.|[^"])*)"', response.text)
-        if match:
-            try:
-                context = json.loads(json.loads(f'"{match.group(1)}"')).get("context", {})
-                if isinstance(context, dict):
-                    return self._build_user_payload(context, "owner_id")
-            except json.JSONDecodeError:
-                pass
-
-        raise LookupError(f"Instagram user not found: {username}")
+        return self._normalize_user(raw_user)
 
     # Network helpers
 
+    @staticmethod
+    def _try_methods[T](methods: Iterable[Callable[[], T | None]]) -> T | None:
+        rate_limit_error = None
+        for method in methods:
+            try:
+                result = method()
+            except InstagramRateLimitError as error:
+                rate_limit_error = error
+                continue
+            if result is not None:
+                return result
+        if rate_limit_error is not None:
+            raise rate_limit_error
+        return None
+
     def _request(self, url: str, headers: dict[str, str]) -> requests.Response | None:
         try:
-            response = self.session.get(url, headers=headers, timeout=30, proxies=self.proxies or None)
-            response.raise_for_status()
-            return response
-        except requests.RequestException:
+            return self._request_with_retry(url, headers)
+        except InstagramRetryableError as error:
+            response = error.response
+            if response is not None and response.status_code == 429:
+                raise InstagramRateLimitError(response.headers.get("Retry-After"))
             return None
+
+    @retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=30),
+        retry=retry_if_exception_type(InstagramRetryableError),
+        reraise=True,
+    )
+    def _request_with_retry(self, url: str, headers: dict[str, str]) -> requests.Response | None:
+        try:
+            response = self.session.get(
+                url,
+                headers=headers,
+                timeout=30,
+                proxies=self.proxies,
+            )
+        except requests.RequestsError as error:
+            raise InstagramRetryableError() from error
+
+        if response.status_code == 429 or response.status_code in {500, 502, 503, 504}:
+            raise InstagramRetryableError(response)
+
+        try:
+            response.raise_for_status()
+        except requests.RequestsError:
+            return None
+        return response
 
     @classmethod
     def _story_id_to_shortcode(cls, story_id: str) -> str:
@@ -97,7 +151,12 @@ class InstagramService:
         return shortcode
 
     def _load_raw_post(self, shortcode: str) -> dict[str, Any] | None:
-        return self._load_embed_post(shortcode) or self._load_graphql_post(shortcode)
+        return self._try_methods(
+            (
+                lambda: self._load_embed_post(shortcode),
+                lambda: self._load_graphql_post(shortcode),
+            )
+        )
 
     def _load_embed_post(self, shortcode: str) -> dict[str, Any] | None:
         response = self._request(
@@ -122,6 +181,48 @@ class InstagramService:
         except ValueError:
             return None
         return items[0] if isinstance(items, list) and items and isinstance(items[0], dict) else None
+
+    def _load_raw_user(self, username: str) -> dict[str, Any] | None:
+        return self._try_methods(
+            (
+                lambda: self._load_embed_user(username),
+                lambda: self._load_api_user(username),
+            )
+        )
+
+    def _load_embed_user(self, username: str) -> dict[str, Any] | None:
+        response = self._request(f"https://www.instagram.com/{username}/embed", EMBED_HEADERS)
+        if response is None:
+            return None
+
+        match = re.search(r'contextJSON":"((?:\\.|[^"])*)"', response.text)
+        if not match:
+            return None
+        try:
+            context = json.loads(json.loads(f'"{match.group(1)}"')).get("context", {})
+        except json.JSONDecodeError:
+            return None
+        return context if isinstance(context, dict) else None
+
+    def _load_api_user(self, username: str) -> dict[str, Any] | None:
+        return self._try_methods(
+            lambda: self._load_api_user_host(username, host)
+            for host in USER_API_HOSTS
+        )
+
+    def _load_api_user_host(self, username: str, host: str) -> dict[str, Any] | None:
+        response = self._request(
+            f"https://{host}/api/v1/users/web_profile_info/"
+            f"?username={quote_plus(username)}",
+            USER_HEADERS,
+        )
+        if response is None:
+            return None
+        try:
+            user = response.json().get("data", {}).get("user")
+        except (TypeError, ValueError):
+            user = None
+        return user if isinstance(user, dict) else None
 
     # Parsing helpers
 
@@ -177,7 +278,8 @@ class InstagramService:
         }
 
     @staticmethod
-    def _build_user_payload(source: dict[str, Any], id_field: str) -> dict[str, Any]:
+    def _normalize_user(source: dict[str, Any]) -> dict[str, Any]:
+        id_field = "owner_id" if "owner_id" in source else "id"
         return {"user": InstagramService._normalize_user_data(source, id_field)}
 
     @staticmethod
@@ -295,6 +397,18 @@ def create_app() -> Flask:
     @app.errorhandler(LookupError)
     def handle_lookup_error(error: LookupError) -> Response:
         return Response(json.dumps({"error": str(error)}), status=404, mimetype="application/json")
+
+    @app.errorhandler(InstagramRateLimitError)
+    def handle_rate_limit_error(error: InstagramRateLimitError) -> Response:
+        headers = {}
+        if error.retry_after:
+            headers["Retry-After"] = error.retry_after
+        return Response(
+            json.dumps({"error": str(error)}),
+            status=429,
+            headers=headers,
+            mimetype="application/json",
+        )
 
     return app
 
