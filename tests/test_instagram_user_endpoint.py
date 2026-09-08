@@ -64,6 +64,15 @@ class InstagramUserEndpointTests(unittest.TestCase):
             47192506057,
         )
 
+    def test_holypeak_official(self):
+        payload = fetch_user("holypeak_official")
+        self.assert_user(
+            payload,
+            "HolyPeak",
+            "holypeak_official",
+            36515194271,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

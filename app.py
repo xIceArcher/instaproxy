@@ -187,6 +187,7 @@ class InstagramService:
         return self._try_methods(
             (
                 lambda: self._load_embed_user(username),
+                lambda: self._load_profile_user(username),
                 lambda: self._load_api_user(username),
             )
         )
@@ -204,6 +205,43 @@ class InstagramService:
         except json.JSONDecodeError:
             return None
         return context if isinstance(context, dict) else None
+
+    def _load_profile_user(self, username: str) -> dict[str, Any] | None:
+        response = self._request(f"https://www.instagram.com/{username}/", EMBED_HEADERS)
+        if response is None:
+            return None
+
+        for script in re.findall(
+            r"<script\b[^>]*(?:data-sjs|type=[\"']application/json[\"'])[^>]*>(.*?)</script>",
+            response.text,
+            re.DOTALL | re.IGNORECASE,
+        ):
+            try:
+                payload = json.loads(script)
+            except json.JSONDecodeError:
+                continue
+
+            user = self._find_nested_user(payload)
+            if user is not None:
+                return user
+        return None
+
+    @staticmethod
+    def _find_nested_user(payload: Any) -> dict[str, Any] | None:
+        if isinstance(payload, dict):
+            user = payload.get("xig_user_by_username")
+            if isinstance(user, dict):
+                return user
+            for value in payload.values():
+                found = InstagramService._find_nested_user(value)
+                if found is not None:
+                    return found
+        elif isinstance(payload, list):
+            for value in payload:
+                found = InstagramService._find_nested_user(value)
+                if found is not None:
+                    return found
+        return None
 
     def _load_api_user(self, username: str) -> dict[str, Any] | None:
         return self._try_methods(
@@ -280,7 +318,10 @@ class InstagramService:
 
     @staticmethod
     def _normalize_user(source: dict[str, Any]) -> dict[str, Any]:
-        id_field = "owner_id" if "owner_id" in source else "id"
+        id_field = next(
+            (field for field in ("owner_id", "pk", "id") if field in source),
+            "id",
+        )
         return {"user": InstagramService._normalize_user_data(source, id_field)}
 
     @staticmethod
