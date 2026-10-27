@@ -9,7 +9,6 @@ from collections.abc import Callable, Iterable
 from typing import Any, TypeVar
 from urllib.parse import quote_plus
 
-import esprima
 from curl_cffi import requests
 from flask import Flask, Response
 from flask_caching import Cache
@@ -154,19 +153,19 @@ class InstagramService:
     def _load_raw_post(self, shortcode: str) -> dict[str, Any] | None:
         return self._try_methods(
             (
-                lambda: self._load_embed_post(shortcode),
+                lambda: self._load_main_post(shortcode),
                 lambda: self._load_graphql_post(shortcode),
             )
         )
 
-    def _load_embed_post(self, shortcode: str) -> dict[str, Any] | None:
+    def _load_main_post(self, shortcode: str) -> dict[str, Any] | None:
         response = self._request(
-            f"https://www.instagram.com/p/{shortcode}/embed/captioned",
+            f"https://www.instagram.com/p/{shortcode}/",
             EMBED_HEADERS,
         )
         if response is None:
             return None
-        return self._extract_raw_post(self._parse_embed_payload(response.text))
+        return self._parse_post_page_payload(response.text, shortcode)
 
     def _load_graphql_post(self, shortcode: str) -> dict[str, Any] | None:
         variables = quote_plus(json.dumps({"shortcode": shortcode}))
@@ -266,39 +265,33 @@ class InstagramService:
     # Parsing helpers
 
     @staticmethod
-    def _parse_embed_payload(html: str) -> dict[str, Any] | None:
-        for snippet in re.findall(r'(requireLazy\(\["TimeSliceImpl".*?\)\);)', html, re.S):
-            if "shortcode_media" not in snippet and "full_name" not in snippet:
-                continue
-
-            try:
-                tokens = esprima.tokenize(snippet)
-            except Exception:
-                continue
-
-            for token in tokens:
-                if "shortcode_media" not in token.value and "full_name" not in token.value:
-                    continue
-                try:
-                    parsed = json.loads(json.loads(token.value))
-                    if isinstance(parsed, dict):
-                        return parsed
-                except (TypeError, json.JSONDecodeError):
-                    continue
-
+    def _find_nested_post(payload: Any, shortcode: str) -> dict[str, Any] | None:
+        if isinstance(payload, dict):
+            if payload.get("code") == shortcode and "taken_at" in payload:
+                return payload
+            for value in payload.values():
+                found = InstagramService._find_nested_post(value, shortcode)
+                if found is not None:
+                    return found
+        elif isinstance(payload, list):
+            for value in payload:
+                found = InstagramService._find_nested_post(value, shortcode)
+                if found is not None:
+                    return found
         return None
 
     @staticmethod
-    def _extract_raw_post(parsed: dict[str, Any] | None) -> dict[str, Any] | None:
-        if not parsed:
-            return None
-        if "shortcode_media" in parsed:
-            return parsed["shortcode_media"]
-
-        gql_data = parsed.get("gql_data")
-        if isinstance(gql_data, dict) and "shortcode_media" in gql_data:
-            return gql_data["shortcode_media"]
-
+    def _parse_post_page_payload(html: str, shortcode: str) -> dict[str, Any] | None:
+        for script in re.findall(
+            r"<script\b[^>]*>(.*?)</script>", html, re.DOTALL | re.IGNORECASE
+        ):
+            try:
+                payload = json.loads(script)
+            except json.JSONDecodeError:
+                continue
+            post = InstagramService._find_nested_post(payload, shortcode)
+            if post is not None:
+                return post
         return None
 
     # Normalization helpers
@@ -345,6 +338,41 @@ class InstagramService:
             return {"video_versions": child["video_versions"]}
         if "image_versions2" in child and child["image_versions2"]:
             return {"image_versions2": child["image_versions2"]}
+        if child.get("is_video") and (child.get("video_url") or child.get("display_resources")):
+            dimensions = child.get("dimensions") or {}
+            resources = child.get("display_resources") or []
+            versions = ([
+                {
+                    "url": child["video_url"],
+                    "width": dimensions.get("width"),
+                    "height": dimensions.get("height"),
+                }
+            ] if child.get("video_url") else [
+                {
+                    "url": resource.get("src"),
+                    "width": resource.get("config_width"),
+                    "height": resource.get("config_height"),
+                }
+                for resource in resources
+                if isinstance(resource, dict) and resource.get("src")
+            ])
+            return {
+                "video_versions": versions
+            }
+        if child.get("display_resources"):
+            return {
+                "image_versions2": {
+                    "candidates": [
+                        {
+                            "url": resource.get("src"),
+                            "width": resource.get("config_width"),
+                            "height": resource.get("config_height"),
+                        }
+                        for resource in child["display_resources"]
+                        if isinstance(resource, dict) and resource.get("src")
+                    ]
+                }
+            }
         raise ValueError("Unsupported Instagram media payload")
 
     @classmethod
