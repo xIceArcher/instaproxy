@@ -19,7 +19,7 @@ def fetch_shortcode(shortcode):
 
 
 class InstagramPostEndpointTests(unittest.TestCase):
-    def assert_single_media_post(self, payload, shortcode, username, media_key):
+    def assert_post_metadata(self, payload, shortcode, username):
         self.assertIn("items", payload)
         self.assertEqual(len(payload["items"]), 1)
 
@@ -30,9 +30,27 @@ class InstagramPostEndpointTests(unittest.TestCase):
         self.assertIn("taken_at", item)
         self.assertIsInstance(item["taken_at"], int)
 
+
+    def assert_single_media_post(self, payload, shortcode, username, media_key):
+        self.assert_post_metadata(payload, shortcode, username)
+
+        item = payload["items"][0]
         self.assertIn("carousel_media", item)
         self.assertEqual(len(item["carousel_media"]), 1)
         self.assertIn(media_key, item["carousel_media"][0])
+
+    def assert_multi_media_post(
+        self, payload, shortcode, username, media_keys, absent_media_keys=()
+    ):
+        self.assert_post_metadata(payload, shortcode, username)
+
+        item = payload["items"][0]
+        self.assertIn("carousel_media", item)
+        self.assertEqual(len(item["carousel_media"]), len(media_keys))
+        for media, media_key in zip(item["carousel_media"], media_keys):
+            self.assertIn(media_key, media)
+            for absent_media_key in absent_media_keys:
+                self.assertNotIn(absent_media_key, media)
 
     def test_single_image_post(self):
         payload = fetch_shortcode("DXuPylBE1zZ")
@@ -57,42 +75,30 @@ class InstagramPostEndpointTests(unittest.TestCase):
     def test_multiple_images_post(self):
         payload = fetch_shortcode("DYQuvTyCaFt")
 
-        self.assertIn("items", payload)
-        self.assertEqual(len(payload["items"]), 1)
-
-        item = payload["items"][0]
-        self.assertEqual(item["code"], "DYQuvTyCaFt")
-        self.assertEqual(item["user"]["username"], "doradora_comic")
-        self.assertEqual(len(item["carousel_media"]), 2)
-        for media in item["carousel_media"]:
-            self.assertIn("image_versions2", media)
-            self.assertNotIn("video_versions", media)
+        self.assert_multi_media_post(
+            payload,
+            "DYQuvTyCaFt",
+            "doradora_comic",
+            ["image_versions2", "image_versions2"],
+            ["video_versions"],
+        )
 
     def test_mixed_media_post(self):
         payload = fetch_shortcode("DZXoywOE_M2")
 
-        self.assertIn("items", payload)
-        self.assertEqual(len(payload["items"]), 1)
-
-        item = payload["items"][0]
-        self.assertEqual(item["code"], "DZXoywOE_M2")
-        self.assertEqual(item["user"]["username"], "sayuridate_official")
-        self.assertEqual(len(item["carousel_media"]), 3)
-
-        self.assertIn("video_versions", item["carousel_media"][0])
-        self.assertIn("image_versions2", item["carousel_media"][1])
-        self.assertIn("image_versions2", item["carousel_media"][2])
+        self.assert_multi_media_post(
+            payload,
+            "DZXoywOE_M2",
+            "sayuridate_official",
+            ["video_versions", "image_versions2", "image_versions2"],
+        )
 
     def test_unobtainable_single_video_post(self):
         payload = fetch_shortcode("DZue5tNtYQX")
 
-        self.assertIn("items", payload)
-        self.assertEqual(len(payload["items"]), 1)
+        self.assert_post_metadata(payload, "DZue5tNtYQX", "iamcoffeeartist")
 
         item = payload["items"][0]
-        self.assertEqual(item["code"], "DZue5tNtYQX")
-        self.assertEqual(item["user"]["username"], "iamcoffeeartist")
-        self.assertEqual(item["caption"]["text"], "")
         self.assertEqual(len(item["carousel_media"]), 1)
         self.assertIn("video_versions", item["carousel_media"][0])
         self.assertNotIn("image_versions2", item["carousel_media"][0])
