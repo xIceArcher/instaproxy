@@ -6,7 +6,7 @@ import os
 import re
 import unicodedata
 from collections.abc import Callable, Iterable
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from urllib.parse import quote_plus
 
 from curl_cffi import requests
@@ -44,6 +44,7 @@ USER_HEADERS = {
 }
 USER_API_HOSTS = ("i.instagram.com", "www.instagram.com")
 T = TypeVar("T")
+HttpMethod = Literal["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "TRACE", "PATCH", "QUERY"]
 
 cache = Cache()
 
@@ -105,9 +106,15 @@ class InstagramService:
             raise rate_limit_error
         return None
 
-    def _request(self, url: str, headers: dict[str, str]) -> requests.Response | None:
+    def _request(
+        self,
+        method: HttpMethod,
+        url: str,
+        headers: dict[str, str],
+        data: dict[str, str] | None = None,
+    ) -> requests.Response | None:
         try:
-            return self._request_with_retry(url, headers)
+            return self._request_with_retry(method, url, headers, data=data)
         except InstagramRetryableError as error:
             response = error.response
             if response is not None and response.status_code == 429:
@@ -120,13 +127,21 @@ class InstagramService:
         retry=retry_if_exception_type(InstagramRetryableError),
         reraise=True,
     )
-    def _request_with_retry(self, url: str, headers: dict[str, str]) -> requests.Response | None:
+    def _request_with_retry(
+        self,
+        method: HttpMethod,
+        url: str,
+        headers: dict[str, str],
+        data: dict[str, str] | None = None,
+    ) -> requests.Response | None:
         try:
-            response = self.session.get(
+            response = self.session.request(
+                method,
                 url,
                 headers=headers,
                 timeout=30,
                 proxy=self.proxy_url,
+                data=data,
             )
         except requests.RequestsError as error:
             raise InstagramRetryableError() from error
@@ -160,6 +175,7 @@ class InstagramService:
 
     def _load_main_post(self, shortcode: str) -> dict[str, Any] | None:
         response = self._request(
+            "GET",
             f"https://www.instagram.com/p/{shortcode}/",
             EMBED_HEADERS,
         )
@@ -168,17 +184,54 @@ class InstagramService:
         return self._parse_post_page_payload(response.text, shortcode)
 
     def _load_graphql_post(self, shortcode: str) -> dict[str, Any] | None:
-        variables = quote_plus(json.dumps({"shortcode": shortcode}))
-        url = f"https://www.instagram.com/graphql/query/?doc_id={GRAPHQL_QUERY_ID}&variables={variables}"
-        response = self._request(url, GRAPHQL_HEADERS)
+        bootstrap = self._request("GET", "https://www.instagram.com/", EMBED_HEADERS)
+        if bootstrap is None:
+            return None
+
+        lsd_match = re.search(r'"LSD".*?"token":"([^"]+)"', bootstrap.text)
+        lsd = lsd_match.group(1) if lsd_match else None
+        headers = {
+            **GRAPHQL_HEADERS,
+            "accept": "application/json, text/javascript, */*; q=0.01",
+            "content-type": "application/x-www-form-urlencoded",
+            "origin": "https://www.instagram.com",
+            "referer": f"https://www.instagram.com/p/{shortcode}/",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "X-ASBD-ID": "129477",
+            "X-IG-D": "www",
+        }
+        if lsd:
+            headers["X-FB-LSD"] = lsd
+
+        variables = json.dumps({"shortcode": shortcode}, separators=(",", ":"))
+        data = {
+            "doc_id": GRAPHQL_QUERY_ID,
+            "variables": variables,
+            "fb_api_caller_class": "RelayModern",
+            "fb_api_req_friendly_name": "PolarisPostActionLoadPostQueryQuery",
+            "server_timestamps": "true",
+        }
+        if lsd:
+            data["lsd"] = lsd
+
+        response = self._request(
+            "POST",
+            "https://www.instagram.com/graphql/query/",
+            headers,
+            data=data,
+        )
         if response is None:
             return None
         response_json = response.json()
-        if "errors" in response_json:
-            return None
         try:
-            items = response_json.get("data", {}).get("xdt_api__v1__media__shortcode__web_info", {}).get("items")
-        except ValueError:
+            items = (
+                response_json.get("data", {})
+                .get("xdt_api__v1__media__shortcode__web_info", {})
+                .get("items")
+            )
+        except (AttributeError, TypeError):
             return None
         return items[0] if isinstance(items, list) and items and isinstance(items[0], dict) else None
 
@@ -192,7 +245,7 @@ class InstagramService:
         )
 
     def _load_embed_user(self, username: str) -> dict[str, Any] | None:
-        response = self._request(f"https://www.instagram.com/{username}/embed", EMBED_HEADERS)
+        response = self._request("GET", f"https://www.instagram.com/{username}/embed", EMBED_HEADERS)
         if response is None:
             return None
 
@@ -206,7 +259,7 @@ class InstagramService:
         return context if isinstance(context, dict) else None
 
     def _load_profile_user(self, username: str) -> dict[str, Any] | None:
-        response = self._request(f"https://www.instagram.com/{username}/", EMBED_HEADERS)
+        response = self._request("GET", f"https://www.instagram.com/{username}/", EMBED_HEADERS)
         if response is None:
             return None
 
@@ -250,6 +303,7 @@ class InstagramService:
 
     def _load_api_user_host(self, username: str, host: str) -> dict[str, Any] | None:
         response = self._request(
+            "GET",
             f"https://{host}/api/v1/users/web_profile_info/"
             f"?username={quote_plus(username)}",
             USER_HEADERS,
@@ -418,9 +472,17 @@ class InstagramService:
         taken_at = raw_post.get("taken_at") or raw_post.get("taken_at_timestamp")
         media_type = 1 if "image_versions2" in media else 2
 
+        owner = raw_post.get("owner") or raw_post.get("user") or {}
+        if not isinstance(owner, dict):
+            owner = {}
+        owner_id = owner.get("id") or owner.get("pk") or owner.get("owner_id")
+        media_id = raw_post.get("id") or raw_post.get("pk")
+        if media_type == 1 and not media_id:
+            media_id = f"{story_id}_{owner_id}" if owner_id else story_id
+
         return {
             **media,
-            "id": story_id if media_type == 2 else raw_post["id"],
+            "id": story_id if media_type == 2 else media_id,
             "media_type": media_type,
             "taken_at": cls._coerce_int(taken_at),
         }
